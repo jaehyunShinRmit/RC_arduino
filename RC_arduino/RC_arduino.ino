@@ -11,7 +11,13 @@
   It uses the TinyGPS++ library to parse the NMEA strings sent by the GPS module,
   and prints interesting GPS information - comma separated - to a newly created
   file on the SD card.
+ 
+  Resources:
+  TinyGPS++ Library  - https://github.com/mikalhart/TinyGPSPlus/releases
+  SD Library (Built-in)
+  SoftwareSerial Library (Built-in)
 
+//9DOF IMU 
   The LSM9DS1 is a versatile 9DOF sensor. It has a built-in
   accelerometer, gyroscope, and magnetometer. Very cool! Plus it
   functions over either SPI or I2C.
@@ -32,16 +38,6 @@
   (mostly) safe connecting the LSM9DS1's SCL and SDA pins 
   directly to the Arduino.
   
-  Resources:
-  TinyGPS++ Library  - https://github.com/mikalhart/TinyGPSPlus/releases
-  SD Library (Built-in)
-  SoftwareSerial Library (Built-in)
-
-  Development/hardware environment specifics:
-  Arduino IDE 1.6.7
-  GPS Logger Shield v2.0 - Make sure the UART switch is set to SW-UART
-  Arduino Uno, RedBoard, Pro, Mega, etc.
-
  # the DC Motor Driver 2x15A_lite module.
  # Product: DC Motor Driver 2x15A_lite
  # SKU    : DRI0018
