@@ -51,7 +51,7 @@
  please connect the IS pins to Arduino
  Connect LA_IS & RA_IS to Arduino digital 2
  Connect LB_IS & RB_IS to Arduino digital 3
- */
+
 ******************************************************************************/
 #include <Wire.h>
 #include <SPI.h>
@@ -62,6 +62,7 @@
 class Farmbot
 {
   public:
+    Farmbot();
     Oriantation();
     //Initial condition
     float initRoll;
@@ -92,7 +93,7 @@ class Farmbot
     float mz;
   protected:
   private:  
-}
+};
 Farmbot::Farmbot()
 {
     initRoll = 0.0;
@@ -113,7 +114,7 @@ Farmbot::Farmbot()
     mx = 0.0;
     my = 0.0;    
     mz = 0.0;
-}
+};
 Farmbot Bot;
 //Status of Arduino
 static int farmbotStatus = 0;
@@ -151,14 +152,14 @@ LSM9DS1 imu;
 #define PRINT_SPEED 50  // 50ms -> 20hz update rate
 
 
-#define MINUTE_INITIAL_ORIANTATION 5   // 5minute
-#define MSECONDE_INITIAL_ORIANTATION MINUTE_INITIAL_ORIANTATION *60000 //ms of TIME_MINUTE
+#define MINUTE_INITIAL_ORIANTATION 1   // 1minute
+#define MSECONDE_INITIAL_ORIANTATION MINUTE_INITIAL_ORIANTATION*60000 //ms of TIME_MINUTE
 #define MAXINDEX_INITIAL_ORIANTATION MSECONDE_INITIAL_ORIANTATION/PRINT_SPEED
 
 #define MSECONDE_ADVANCE 60000 //ms
 #define MAXINDEX_ADVANCE MSECONDE_ADVANCE/PRINT_SPEED
 
-#define MINUTE_COLLECTING 5   // 5minute
+#define MINUTE_COLLECTING 1   // 1minute
 #define MSECONDE_COLLECTING MINUTE_COLLECTING*60000 //ms
 #define MAXINDEX_COLLECTING MSECONDE_COLLECTING/PRINT_SPEED
 
@@ -224,6 +225,11 @@ int M1 = 4;     //M1 Direction Control
 int M2 = 7;     //M1 Direction Control
 int counter=0;
 
+//////////////////////
+// Log Rate Control //
+//////////////////////
+unsigned long lastLog = 0; // Global var to keep of last time we logged
+
 void setup()
 {
   Serial.begin(115200);
@@ -260,21 +266,30 @@ void setup()
   digitalWrite(E2,LOW); 
   pinMode(2,INPUT);
   pinMode(3,INPUT);
+
 }
 
 void loop()
 {
   int i;
-  if ((lastLog + LOG_RATE) <= millis())
-  { // If it's been LOG_RATE milliseconds since the last log:
+  if ((lastLog + PRINT_SPEED) <= millis())// If it's been LOG_RATE milliseconds since the last log:
+  { 
      switch(farmbotStatus){
       case SENSOR_INITIALIZATION:
-        if (gpsPort.available()) // When GPS start available go to the next step
-           farmbotStatus = ROBOT_INITIAL_ORIANTATION;      
+       //   Serial.println("Sensor initializing.");
+          if (gpsPort.available()) // When GPS start available go to the next step
+            farmbotStatus = ROBOT_INITIAL_ORIANTATION;      
       break;
       case ROBOT_INITIAL_ORIANTATION:
-          if(MAXINDEX_INITIAL_ORIANTATION < iInitialOriantation++)
+      //    Serial.println("Calculating Initial Oriantation - start.");
+          if(MAXINDEX_INITIAL_ORIANTATION > iInitialOriantation++)
           { 
+//            Serial.print("Initial - Orientation: ");
+//            Serial.print(Bot.heading_deg);
+//            Serial.print(" ");
+//            Serial.print(Bot.pitch_deg);
+//            Serial.print(" ");
+//            Serial.println(Bot.roll_deg);
             // Calculate initial oriatation by averaging IMU and GPS
             // recusrive mean calculation
             InitialOriantationUpdate(iInitialOriantation);
@@ -284,6 +299,13 @@ void loop()
             }
           }
           else{
+            Serial.println("Calculating Initial Oriantation - completed.");
+            Serial.print("Initial - Orientation: ");
+            Serial.print(Bot.initHeading);
+            Serial.print(" ");
+            Serial.print(Bot.initPitch);
+            Serial.print(" ");
+            Serial.println(Bot.initRoll);
             // After calculting initial oriantation move the next step
             farmbotStatus = ADVANCE;
             iInitialOriantation = 0;
@@ -291,9 +313,11 @@ void loop()
           }        
       break;
       case ADVANCE:
-          if(MAXINDEX_ADVANCE < iAdvance++)
+         // Serial.println("GO!!");
+          if(MAXINDEX_ADVANCE > iAdvance++)
           { 
               motoradvance (255,255);   //move forward in max speed
+              logFarmbot();
           }
           else{
              farmbotStatus = COLLECTING_DATA;
@@ -301,9 +325,9 @@ void loop()
           }
       break;     
       case COLLECTING_DATA:
-          if(MAXINDEX_COLLECTING < iCollecting++)
+      //Serial.println("Stop!!");
+          if(MAXINDEX_COLLECTING > iCollecting++)
           { 
-              logFrambot();
               motorstop();
           }
           else{
@@ -321,6 +345,26 @@ void loop()
     // If we're not logging, continue to "feed" the tinyGPS object:
   while (gpsPort.available())
     tinyGPS.encode(gpsPort.read());
+
+   if(Serial.available()){
+    char val = Serial.read();
+    if(val != -1)
+    {
+      switch(val)
+      {
+      case 'f':
+        farmbotStatus=SENSOR_INITIALIZATION;
+        break;
+      case 's':
+        farmbotStatus=ROBOT_INITIAL_ORIANTATION;
+        break;
+      }
+
+
+      
+    }
+  }
+    
 }
 
 void updateFrambot()
@@ -362,16 +406,16 @@ void updateOriantation()
   // Arctangent of y/x
   Bot.heading = atan2(my_comp,mx_comp);
   Bot.heading_deg = Bot.heading*180.0/M_PI;
-  if (heading < 0)
+  if (Bot.heading_deg  < 0)
   Bot.heading_deg += 360;
 }
 
 void InitialOriantationUpdate(int n)
 {
   updateOriantation();
-  Bot.initRoll  = ((Bot.initRoll * n) + Bot.roll) / (n+1);
-  Bot.initPitch = ((Bot.initPitch * n) + Bot.pitch) / (n+1);
-  Bot.initHeading = ((Bot.initHeading * n) + Bot.heading) / (n+1);
+  Bot.initRoll  = ((Bot.initRoll * n) + Bot.roll_deg) / (n+1);
+  Bot.initPitch = ((Bot.initPitch * n) + Bot.pitch_deg) / (n+1);
+  Bot.initHeading = ((Bot.initHeading * n) + Bot.heading_deg) / (n+1);
 }
 
 void InitialGPSUpdate(int n)
@@ -405,41 +449,40 @@ int updateIMU()
     imu.readMag();
   }
 }
-byte logFrambot()
+byte logFarmbot()
 {
   // Need to check for logging GPS and IMU with 20hz update rate.
   updateIMU();
   File logFile = SD.open(logFileName, FILE_WRITE); // Open the log file
   if (logFile)
   {
-    logFile.print(Bot.heading,10);
-    logFile.print(' ');
-    logFile.print(Bot.roll,10);
-    logFile.print(' ');
-    logFile.print(Bot.pitch,10);
-    logFile.print(' ');
+    logFile.print(Bot.heading_deg,10);
+    logFile.print(',');
+    logFile.print(Bot.roll_deg,10);
+    logFile.print(',');
+    logFile.print(Bot.pitch_deg,10);
+    logFile.print(',');
     logFile.print(Bot.ax,10);
-    logFile.print(' ');
+    logFile.print(',');
     logFile.print(Bot.ay,10);
-    logFile.print(' ');
+    logFile.print(',');
     logFile.print(Bot.az,10);
-    logFile.print(' ');
-    logFile.print(tinyGPS.location.lng(), 6);
-    logFile.print(',');
-    logFile.print(tinyGPS.location.lat(), 6);
-    logFile.print(',');
-    logFile.print(tinyGPS.altitude.feet(), 1);
-    logFile.print(',');
-    logFile.print(tinyGPS.speed.mph(), 1);
-    logFile.print(',');
-    logFile.print(tinyGPS.course.deg(), 1);
-    logFile.print(',');
-    logFile.print(tinyGPS.date.value());
-    logFile.print(',');
-    logFile.print(tinyGPS.time.value());
-    logFile.print(',');
-    logFile.print(tinyGPS.satellites.value());
-    logFile.print(',');
+//    logFile.print(',');
+//    logFile.print(tinyGPS.location.lng(), 6);
+//    logFile.print(',');
+//    logFile.print(tinyGPS.location.lat(), 6);
+//    logFile.print(',');
+//    logFile.print(tinyGPS.altitude.feet(), 1);
+//    logFile.print(',');
+//    logFile.print(tinyGPS.speed.mph(), 1);
+//    logFile.print(',');
+//    logFile.print(tinyGPS.course.deg(), 1);
+//    logFile.print(',');
+//    logFile.print(tinyGPS.date.value());
+//    logFile.print(',');
+//    logFile.print(tinyGPS.time.value());
+//    logFile.print(',');
+//    logFile.print(tinyGPS.satellites.value());
     logFile.println();
     logFile.close();
 
