@@ -117,7 +117,7 @@ Farmbot::Farmbot()
 };
 Farmbot Bot;
 //Status of Arduino
-static int farmbotStatus = 0;
+static int farmbotStatus = 1;
 #define SENSOR_INITIALIZATION       1
 #define ROBOT_INITIAL_ORIANTATION   2
 #define ADVANCE                     3
@@ -152,11 +152,11 @@ LSM9DS1 imu;
 #define PRINT_SPEED 50  // 50ms -> 20hz update rate
 
 
-#define MINUTE_INITIAL_ORIANTATION 1   // 1minute
+#define MINUTE_INITIAL_ORIANTATION 0.5   // 1minute
 #define MSECONDE_INITIAL_ORIANTATION MINUTE_INITIAL_ORIANTATION*60000 //ms of TIME_MINUTE
 #define MAXINDEX_INITIAL_ORIANTATION MSECONDE_INITIAL_ORIANTATION/PRINT_SPEED
 
-#define MSECONDE_ADVANCE 60000 //ms
+#define MSECONDE_ADVANCE 6000 //ms
 #define MAXINDEX_ADVANCE MSECONDE_ADVANCE/PRINT_SPEED
 
 #define MINUTE_COLLECTING 1   // 1minute
@@ -182,9 +182,9 @@ static unsigned long lastPrint = 0; // Keep track of print time
 #define LOG_FILE_SUFFIX "csv" // Suffix of the log file
 char logFileName[13]; // Char string to store the log file name
 // Data to be logged:
-#define LOG_COLUMN_COUNT 9
+#define LOG_COLUMN_COUNT 15
 char * log_col_names[LOG_COLUMN_COUNT] = {
-  "ax(g)","ay(g)","az(g)","gx(deg/s)","gy(deg/s)","gz(deg/s)","mx(gauss)","my(gauss)","mz(gauss)",
+ "ms", "heading(deg)","roll(deg)","pitch(deg)","ax(g)","ay(g)","az(g)","lag","lat","alt","speed(m/h)","course","data","time","satellites"
 }; // log_col_names is printed at the top of the file.
 
 
@@ -313,7 +313,7 @@ void loop()
           }        
       break;
       case ADVANCE:
-         // Serial.println("GO!!");
+      Serial.println("GO!!");
           if(MAXINDEX_ADVANCE > iAdvance++)
           { 
               motoradvance (255,255);   //move forward in max speed
@@ -325,7 +325,7 @@ void loop()
           }
       break;     
       case COLLECTING_DATA:
-      //Serial.println("Stop!!");
+      Serial.println("Stop!!");
           if(MAXINDEX_COLLECTING > iCollecting++)
           { 
               motorstop();
@@ -338,6 +338,15 @@ void loop()
       case WEEDING:
           // weeding task
           // need to code
+           File logFile = SD.open(logFileName, FILE_WRITE); // Open the log file
+
+            logFile.print(Bot.initHeading, 6);
+            logFile.print(',');
+            logFile.print(Bot.initPitch, 6);
+            logFile.print(',');
+            logFile.print(Bot.initRoll, 1);
+            logFile.println();
+            logFile.close();
       break;     
      }
      lastLog = millis(); // Update the lastLog variable
@@ -354,10 +363,13 @@ void loop()
       {
       case 'f':
         farmbotStatus=SENSOR_INITIALIZATION;
-        break;
+      break;
       case 's':
         farmbotStatus=ROBOT_INITIAL_ORIANTATION;
-        break;
+      break;
+      case 't':
+        farmbotStatus=ADVANCE;
+      break;
       }
 
 
@@ -367,7 +379,7 @@ void loop()
     
 }
 
-void updateFrambot()
+void updateFarmbot()
 {
   updateIMU();
   Bot.ax = imu.calcAccel(imu.ax);
@@ -382,7 +394,7 @@ void updateFrambot()
 }
 void updateOriantation()
 {
-  updateFrambot(); // update the current measurement of sensors on the Farmbot
+  updateFarmbot(); // update the current measurement of sensors on the Farmbot
   
   float x =  Bot.mx - mag_offsets[0];
   float y =  Bot.my - mag_offsets[1];
@@ -452,10 +464,12 @@ int updateIMU()
 byte logFarmbot()
 {
   // Need to check for logging GPS and IMU with 20hz update rate.
-  updateIMU();
+  updateOriantation();
   File logFile = SD.open(logFileName, FILE_WRITE); // Open the log file
   if (logFile)
   {
+    logFile.print(millis(),10);
+    logFile.print(',');
     logFile.print(Bot.heading_deg,10);
     logFile.print(',');
     logFile.print(Bot.roll_deg,10);
@@ -467,22 +481,22 @@ byte logFarmbot()
     logFile.print(Bot.ay,10);
     logFile.print(',');
     logFile.print(Bot.az,10);
-//    logFile.print(',');
-//    logFile.print(tinyGPS.location.lng(), 6);
-//    logFile.print(',');
-//    logFile.print(tinyGPS.location.lat(), 6);
-//    logFile.print(',');
-//    logFile.print(tinyGPS.altitude.feet(), 1);
-//    logFile.print(',');
-//    logFile.print(tinyGPS.speed.mph(), 1);
-//    logFile.print(',');
-//    logFile.print(tinyGPS.course.deg(), 1);
-//    logFile.print(',');
-//    logFile.print(tinyGPS.date.value());
-//    logFile.print(',');
-//    logFile.print(tinyGPS.time.value());
-//    logFile.print(',');
-//    logFile.print(tinyGPS.satellites.value());
+    logFile.print(',');
+    logFile.print(tinyGPS.location.lng(), 6);
+    logFile.print(',');
+    logFile.print(tinyGPS.location.lat(), 6);
+    logFile.print(',');
+    logFile.print(tinyGPS.altitude.feet(), 1);
+    logFile.print(',');
+    logFile.print(tinyGPS.speed.mph(), 1);
+    logFile.print(',');
+    logFile.print(tinyGPS.course.deg(), 1);
+    logFile.print(',');
+    logFile.print(tinyGPS.date.value());
+    logFile.print(',');
+    logFile.print(tinyGPS.time.value());
+    logFile.print(',');
+    logFile.print(tinyGPS.satellites.value());
     logFile.println();
     logFile.close();
 
