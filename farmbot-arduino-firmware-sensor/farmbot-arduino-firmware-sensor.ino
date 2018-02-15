@@ -51,7 +51,7 @@
  please connect the IS pins to Arduino
  Connect LA_IS & RA_IS to Arduino digital 2
  Connect LB_IS & RB_IS to Arduino digital 3
- */
+
 ******************************************************************************/
 #include <Wire.h>
 #include <SPI.h>
@@ -59,9 +59,63 @@
 #include <TinyGPS++.h>
 #include <SparkFunLSM9DS1.h>
 
+// Interrupt handling for:
+//   - movement
+//   - encoders
+//   - pin guard
+//
+
+unsigned long interruptStartTime = 0;
+unsigned long interruptStopTime = 0;
+unsigned long interruptDuration = 0;
+unsigned long interruptDurationMax = 0;
+
+bool interruptBusy = false;
+int interruptSecondTimer = 0;
+void interrupt(void)
+{
+  if (!debugInterrupt)
+  {
+    //interruptSecondTimer++;
+
+    if (interruptBusy == false)
+    {
+      //interruptStartTime = micros();
+
+      interruptBusy = true;
+      
+
+      // Check the actions triggered once per second
+      //if (interruptSecondTimer >= 1000000 / MOVEMENT_INTERRUPT_SPEED)
+      //{
+      //  interruptSecondTimer = 0;
+      //  PinGuard::getInstance()->checkPins();
+      //  //blinkLed();
+      //}
+
+      //interruptStopTime = micros();
+
+      //if (interruptStopTime > interruptStartTime)
+      //{
+      //  interruptDuration = interruptStopTime - interruptStartTime;
+      //}
+
+      //if (interruptDuration > interruptDurationMax)
+      //{
+      //  interruptDurationMax = interruptDuration;
+      //}
+
+      interruptBusy = false;
+    }
+  }
+}
+
+
+
 class Farmbot
 {
   public:
+    Farmbot();
     Oriantation();
     //Initial condition
     float initRoll;
@@ -92,7 +146,7 @@ class Farmbot
     float mz;
   protected:
   private:  
-}
+};
 Farmbot::Farmbot()
 {
     initRoll = 0.0;
@@ -113,10 +167,10 @@ Farmbot::Farmbot()
     mx = 0.0;
     my = 0.0;    
     mz = 0.0;
-}
+};
 Farmbot Bot;
 //Status of Arduino
-static int farmbotStatus = 0;
+static int farmbotStatus = 1;
 #define SENSOR_INITIALIZATION       1
 #define ROBOT_INITIAL_ORIANTATION   2
 #define ADVANCE                     3
@@ -151,14 +205,14 @@ LSM9DS1 imu;
 #define PRINT_SPEED 50  // 50ms -> 20hz update rate
 
 
-#define MINUTE_INITIAL_ORIANTATION 5   // 5minute
-#define MSECONDE_INITIAL_ORIANTATION MINUTE_INITIAL_ORIANTATION *60000 //ms of TIME_MINUTE
+#define MINUTE_INITIAL_ORIANTATION 0.5   // 1minute
+#define MSECONDE_INITIAL_ORIANTATION MINUTE_INITIAL_ORIANTATION*60000 //ms of TIME_MINUTE
 #define MAXINDEX_INITIAL_ORIANTATION MSECONDE_INITIAL_ORIANTATION/PRINT_SPEED
 
-#define MSECONDE_ADVANCE 60000 //ms
+#define MSECONDE_ADVANCE 6000 //ms
 #define MAXINDEX_ADVANCE MSECONDE_ADVANCE/PRINT_SPEED
 
-#define MINUTE_COLLECTING 5   // 5minute
+#define MINUTE_COLLECTING 1   // 1minute
 #define MSECONDE_COLLECTING MINUTE_COLLECTING*60000 //ms
 #define MAXINDEX_COLLECTING MSECONDE_COLLECTING/PRINT_SPEED
 
@@ -181,9 +235,9 @@ static unsigned long lastPrint = 0; // Keep track of print time
 #define LOG_FILE_SUFFIX "csv" // Suffix of the log file
 char logFileName[13]; // Char string to store the log file name
 // Data to be logged:
-#define LOG_COLUMN_COUNT 9
+#define LOG_COLUMN_COUNT 15
 char * log_col_names[LOG_COLUMN_COUNT] = {
-  "ax(g)","ay(g)","az(g)","gx(deg/s)","gy(deg/s)","gz(deg/s)","mx(gauss)","my(gauss)","mz(gauss)",
+ "ms", "heading(deg)","roll(deg)","pitch(deg)","ax(g)","ay(g)","az(g)","lag","lat","alt","speed(m/h)","course","data","time","satellites"
 }; // log_col_names is printed at the top of the file.
 
 
@@ -224,6 +278,11 @@ int M1 = 4;     //M1 Direction Control
 int M2 = 7;     //M1 Direction Control
 int counter=0;
 
+//////////////////////
+// Log Rate Control //
+//////////////////////
+unsigned long lastLog = 0; // Global var to keep of last time we logged
+
 void setup()
 {
   Serial.begin(115200);
@@ -260,21 +319,38 @@ void setup()
   digitalWrite(E2,LOW); 
   pinMode(2,INPUT);
   pinMode(3,INPUT);
+
+  // Start the interrupt used for moving
+  // Interrupt management code library written by Paul Stoffregen
+  // The default time 100 micro seconds
+
+  Timer1.attachInterrupt(interrupt);
+  Timer1.initialize(MOVEMENT_INTERRUPT_SPEED);
+  Timer1.start();
+
 }
 
 void loop()
 {
   int i;
-  if ((lastLog + LOG_RATE) <= millis())
-  { // If it's been LOG_RATE milliseconds since the last log:
+  if ((lastLog + PRINT_SPEED) <= millis())// If it's been LOG_RATE milliseconds since the last log:
+  { 
      switch(farmbotStatus){
       case SENSOR_INITIALIZATION:
-        if (gpsPort.available()) // When GPS start available go to the next step
-           farmbotStatus = ROBOT_INITIAL_ORIANTATION;      
+       //   Serial.println("Sensor initializing.");
+          if (gpsPort.available()) // When GPS start available go to the next step
+            farmbotStatus = ROBOT_INITIAL_ORIANTATION;      
       break;
       case ROBOT_INITIAL_ORIANTATION:
-          if(MAXINDEX_INITIAL_ORIANTATION < iInitialOriantation++)
+      //    Serial.println("Calculating Initial Oriantation - start.");
+          if(MAXINDEX_INITIAL_ORIANTATION > iInitialOriantation++)
           { 
+//            Serial.print("Initial - Orientation: ");
+//            Serial.print(Bot.heading_deg);
+//            Serial.print(" ");
+//            Serial.print(Bot.pitch_deg);
+//            Serial.print(" ");
+//            Serial.println(Bot.roll_deg);
             // Calculate initial oriatation by averaging IMU and GPS
             // recusrive mean calculation
             InitialOriantationUpdate(iInitialOriantation);
@@ -284,6 +360,13 @@ void loop()
             }
           }
           else{
+            Serial.println("Calculating Initial Oriantation - completed.");
+            Serial.print("Initial - Orientation: ");
+            Serial.print(Bot.initHeading);
+            Serial.print(" ");
+            Serial.print(Bot.initPitch);
+            Serial.print(" ");
+            Serial.println(Bot.initRoll);
             // After calculting initial oriantation move the next step
             farmbotStatus = ADVANCE;
             iInitialOriantation = 0;
@@ -291,9 +374,11 @@ void loop()
           }        
       break;
       case ADVANCE:
-          if(MAXINDEX_ADVANCE < iAdvance++)
+      Serial.println("GO!!");
+          if(MAXINDEX_ADVANCE > iAdvance++)
           { 
               motoradvance (255,255);   //move forward in max speed
+              logFarmbot();
           }
           else{
              farmbotStatus = COLLECTING_DATA;
@@ -301,9 +386,9 @@ void loop()
           }
       break;     
       case COLLECTING_DATA:
-          if(MAXINDEX_COLLECTING < iCollecting++)
+      Serial.println("Stop!!");
+          if(MAXINDEX_COLLECTING > iCollecting++)
           { 
-              logFrambot();
               motorstop();
           }
           else{
@@ -314,6 +399,15 @@ void loop()
       case WEEDING:
           // weeding task
           // need to code
+           File logFile = SD.open(logFileName, FILE_WRITE); // Open the log file
+
+            logFile.print(Bot.initHeading, 6);
+            logFile.print(',');
+            logFile.print(Bot.initPitch, 6);
+            logFile.print(',');
+            logFile.print(Bot.initRoll, 1);
+            logFile.println();
+            logFile.close();
       break;     
      }
      lastLog = millis(); // Update the lastLog variable
@@ -321,9 +415,32 @@ void loop()
     // If we're not logging, continue to "feed" the tinyGPS object:
   while (gpsPort.available())
     tinyGPS.encode(gpsPort.read());
+
+   if(Serial.available()){
+    char val = Serial.read();
+    if(val != -1)
+    {
+      switch(val)
+      {
+      case 'f':
+        farmbotStatus=SENSOR_INITIALIZATION;
+      break;
+      case 's':
+        farmbotStatus=ROBOT_INITIAL_ORIANTATION;
+      break;
+      case 't':
+        farmbotStatus=ADVANCE;
+      break;
+      }
+
+
+      
+    }
+  }
+    
 }
 
-void updateFrambot()
+void updateFarmbot()
 {
   updateIMU();
   Bot.ax = imu.calcAccel(imu.ax);
@@ -338,7 +455,7 @@ void updateFrambot()
 }
 void updateOriantation()
 {
-  updateFrambot(); // update the current measurement of sensors on the Farmbot
+  updateFarmbot(); // update the current measurement of sensors on the Farmbot
   
   float x =  Bot.mx - mag_offsets[0];
   float y =  Bot.my - mag_offsets[1];
@@ -362,16 +479,16 @@ void updateOriantation()
   // Arctangent of y/x
   Bot.heading = atan2(my_comp,mx_comp);
   Bot.heading_deg = Bot.heading*180.0/M_PI;
-  if (heading < 0)
+  if (Bot.heading_deg  < 0)
   Bot.heading_deg += 360;
 }
 
 void InitialOriantationUpdate(int n)
 {
   updateOriantation();
-  Bot.initRoll  = ((Bot.initRoll * n) + Bot.roll) / (n+1);
-  Bot.initPitch = ((Bot.initPitch * n) + Bot.pitch) / (n+1);
-  Bot.initHeading = ((Bot.initHeading * n) + Bot.heading) / (n+1);
+  Bot.initRoll  = ((Bot.initRoll * n) + Bot.roll_deg) / (n+1);
+  Bot.initPitch = ((Bot.initPitch * n) + Bot.pitch_deg) / (n+1);
+  Bot.initHeading = ((Bot.initHeading * n) + Bot.heading_deg) / (n+1);
 }
 
 void InitialGPSUpdate(int n)
@@ -405,25 +522,27 @@ int updateIMU()
     imu.readMag();
   }
 }
-byte logFrambot()
+byte logFarmbot()
 {
   // Need to check for logging GPS and IMU with 20hz update rate.
-  updateIMU();
+  updateOriantation();
   File logFile = SD.open(logFileName, FILE_WRITE); // Open the log file
   if (logFile)
   {
-    logFile.print(Bot.heading,10);
-    logFile.print(' ');
-    logFile.print(Bot.roll,10);
-    logFile.print(' ');
-    logFile.print(Bot.pitch,10);
-    logFile.print(' ');
+    logFile.print(millis(),10);
+    logFile.print(',');
+    logFile.print(Bot.heading_deg,10);
+    logFile.print(',');
+    logFile.print(Bot.roll_deg,10);
+    logFile.print(',');
+    logFile.print(Bot.pitch_deg,10);
+    logFile.print(',');
     logFile.print(Bot.ax,10);
-    logFile.print(' ');
+    logFile.print(',');
     logFile.print(Bot.ay,10);
-    logFile.print(' ');
+    logFile.print(',');
     logFile.print(Bot.az,10);
-    logFile.print(' ');
+    logFile.print(',');
     logFile.print(tinyGPS.location.lng(), 6);
     logFile.print(',');
     logFile.print(tinyGPS.location.lat(), 6);
@@ -439,7 +558,6 @@ byte logFrambot()
     logFile.print(tinyGPS.time.value());
     logFile.print(',');
     logFile.print(tinyGPS.satellites.value());
-    logFile.print(',');
     logFile.println();
     logFile.close();
 
