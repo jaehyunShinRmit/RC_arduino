@@ -59,6 +59,59 @@
 #include <TinyGPS++.h>
 #include <SparkFunLSM9DS1.h>
 
+// Interrupt handling for:
+//   - movement
+//   - encoders
+//   - pin guard
+//
+
+unsigned long interruptStartTime = 0;
+unsigned long interruptStopTime = 0;
+unsigned long interruptDuration = 0;
+unsigned long interruptDurationMax = 0;
+
+bool interruptBusy = false;
+int interruptSecondTimer = 0;
+void interrupt(void)
+{
+  if (!debugInterrupt)
+  {
+    //interruptSecondTimer++;
+
+    if (interruptBusy == false)
+    {
+      //interruptStartTime = micros();
+
+      interruptBusy = true;
+      
+
+      // Check the actions triggered once per second
+      //if (interruptSecondTimer >= 1000000 / MOVEMENT_INTERRUPT_SPEED)
+      //{
+      //  interruptSecondTimer = 0;
+      //  PinGuard::getInstance()->checkPins();
+      //  //blinkLed();
+      //}
+
+      //interruptStopTime = micros();
+
+      //if (interruptStopTime > interruptStartTime)
+      //{
+      //  interruptDuration = interruptStopTime - interruptStartTime;
+      //}
+
+      //if (interruptDuration > interruptDurationMax)
+      //{
+      //  interruptDurationMax = interruptDuration;
+      //}
+
+      interruptBusy = false;
+    }
+  }
+}
+
+
+
 class Farmbot
 {
   public:
@@ -266,6 +319,14 @@ void setup()
   digitalWrite(E2,LOW); 
   pinMode(2,INPUT);
   pinMode(3,INPUT);
+
+  // Start the interrupt used for moving
+  // Interrupt management code library written by Paul Stoffregen
+  // The default time 100 micro seconds
+
+  Timer1.attachInterrupt(interrupt);
+  Timer1.initialize(MOVEMENT_INTERRUPT_SPEED);
+  Timer1.start();
 
 }
 
