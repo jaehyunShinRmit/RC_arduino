@@ -1,8 +1,3 @@
-/*
-Modified to add command functions for Frambot-sensor
-sensorCode = 'K'
-*/
-
 #include "Command.h"
 
 const char axisCodes[3] = {'X', 'Y', 'Z'};
@@ -16,12 +11,6 @@ const char timeCode = 'T';
 const char modeCode = 'M';
 const char msgQueueCode = 'Q';
 
-//Added for Farmbot-Sensor 
-const char sensorCode    = 'K';
-const char latitudeCode  = 'L';
-const char longitudeCode = 'O';
-const char headingCode   = 'H';
-
 CommandCodeEnum commandCodeEnum = CODE_UNDEFINED;
 
 Command::Command(char *commandChar)
@@ -33,7 +22,7 @@ Command::Command(char *commandChar)
 
   charPointer = strtok(charBuf, " \n\r\0");
 
-  if (charPointer[0] == 'G' || charPointer[0] == 'F' || charPointer[0] == 'K') // add 'K' for Farmbot sensor
+  if (charPointer[0] == 'G' || charPointer[0] == 'F')
   {
     commandCodeEnum = getGCodeEnum(charPointer);
   }
@@ -53,16 +42,7 @@ Command::Command(char *commandChar)
 
 CommandCodeEnum Command::getGCodeEnum(char *code)
 {
-  // add 'K' for Farmbot sensor
-  if (strcmp(code, "K11") == 0)
-  {
-    return K11;
-  }
-  if (strcmp(code, "K51") == 0)
-  {
-    return K51;
-  }
-  
+
   if (strcmp(code, "G0") == 0 || strcmp(code, "G00") == 0)
   {
     return G00;

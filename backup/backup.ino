@@ -32,46 +32,8 @@
 #include <SD.h>
 #include <TinyGPS++.h>
 #include <SparkFunLSM9DS1.h>
-#include "FarmbotSensor.h"
-#include "Command.h"
-//#include "GCodeProcessor.h" //need to add to use Gcode
-#include "KCodeProcessor.h"
-#include "TimerOne.h"
-#include "pins.h"
-#include "Config.h"
-
-#include "TimerOne.h"
-#include "MemoryFree.h"
-#include "Debug.h"
 
 
-
-static char commandEndChar = 0x0A;
-static KCodeProcessor *kCodeProcessor = new KCodeProcessor();
-//static GCodeProcessor *gCodeProcessor = new GCodeProcessor();
-
-unsigned long lastAction;
-unsigned long currentTime;
-unsigned long cycleCounter = 0;
-bool previousEmergencyStop = false;
-
-unsigned long pinGuardLastCheck;
-unsigned long pinGuardCurrentTime;
-
-int lastParamChangeNr = 0;
-
-String commandString = "";
-char incomingChar = 0;
-char incomingCommandArray[INCOMING_CMD_BUF_SIZE];
-int incomingCommandPointer = 0;
-
-// Blink led routine used for testing
-bool blink = false;
-void blinkLed()
-{
-  blink = !blink;
-  digitalWrite(LED_PIN, blink);
-}
 // Interrupt handling for:
 //   - movement
 //   - encoders
@@ -159,7 +121,6 @@ LSM9DS1 imu;
 #define PRINT_RAW
 #define PRINT_SPEED 50  // 50ms -> 20hz update rate
 
-
 #define MINUTE_INITIAL_ORIANTATION 0.5   // 1minute
 #define MSECONDE_INITIAL_ORIANTATION MINUTE_INITIAL_ORIANTATION*60000 //ms of TIME_MINUTE
 #define MAXINDEX_INITIAL_ORIANTATION MSECONDE_INITIAL_ORIANTATION/PRINT_SPEED
@@ -210,18 +171,9 @@ float mag_softiron_matrix[3][3] = { { 0.97196, 0.00833, 0.00444 },
 /////////////////////////
 TinyGPSPlus tinyGPS; // tinyGPSPlus object to be used throughout
 #define GPS_BAUD 9600 // GPS module's default baud rate
+#define gpsPort Serial1 // GPS Serial Port Definitions 
 
-/////////////////////////////////
-// GPS Serial Port Definitions //
-/////////////////////////////////
-// If you're using an Arduino Uno, Mega, RedBoard, or any board that uses the
-// 0/1 UART for programming/Serial monitor-ing, use SoftwareSerial:
-// Set gpsPort to either ssGPS if using SoftwareSerial or Serial1 if using an
-// Arduino with a dedicated hardware serial port
-#define gpsPort Serial1  // Alternatively, use Serial1 on the Leonardo
-
-// Define the serial monitor port. On the Uno, Mega, and Leonardo this is 'Serial'
-//  on other boards this may be 'SerialUSB'
+// Serial monitor port. 
 #define SerialMonitor Serial
 
 
@@ -241,7 +193,6 @@ unsigned long lastLog = 0; // Global var to keep of last time we logged
 
 void setup()
 {
-  /*
   Serial.begin(115200);
   gpsPort.begin(GPS_BAUD);
 
@@ -268,36 +219,28 @@ void setup()
     Serial.println("Failed to communicate with LSM9DS1.");
     while (1);
   }
+  
   // Motor Driver setup
   int i;
   for (i = 4; i <= 7; i++)
-    pinMode(i, OUTPUT);
+  pinMode(i, OUTPUT);
   digitalWrite(E1, LOW);
   digitalWrite(E2, LOW);
   pinMode(2, INPUT);
   pinMode(3, INPUT);
-*/
+
   // Start the interrupt used for moving
   // Interrupt management code library written by Paul Stoffregen
   // The default time 100 micro seconds
 
-  Serial.begin(115200);
-  
   Timer1.attachInterrupt(interrupt);
   Timer1.initialize(MOVEMENT_INTERRUPT_SPEED);
   Timer1.start();
 
- // Initialize the inactivity check
-  lastAction = millis();
-    Serial.print("R99 ARDUINO STARTUP COMPLETE\r\n");
 }
-
-
-char commandChar[INCOMING_CMD_BUF_SIZE + 1];
 
 void loop()
 {
-  /*
   int i;
   if ((lastLog + PRINT_SPEED) <= millis())// If it's been LOG_RATE milliseconds since the last log:
   {
@@ -381,78 +324,26 @@ void loop()
   // If we're not logging, continue to "feed" the tinyGPS object:
   while (gpsPort.available())
     tinyGPS.encode(gpsPort.read());
-*/
+
   if (Serial.available()) {
-
-    // Save current time stamp for timeout actions
-    lastAction = millis();
-
-    // Get the input and start processing on receiving 'new line'
-    incomingChar = Serial.read();
-
-    // Filter out emergency stop.
-    if (!(incomingChar == 69 || incomingChar == 101))
+    char val = Serial.read();
+    if (val != -1)
     {
-      incomingCommandArray[incomingCommandPointer] = incomingChar;
-      incomingCommandPointer++;
-     
-    }
-    else
-    {
-      KCurrentState::getInstance()->setEmergencyStop();
-    }
-
-    // If the string is getting to long, cap it off with a new line and let it process anyway
-    if (incomingCommandPointer >= INCOMING_CMD_BUF_SIZE - 1)
-    {
-      incomingChar = '\n';
-      incomingCommandArray[incomingCommandPointer] = incomingChar;
-      incomingCommandPointer++;
-    }
-
-    if (incomingChar == '\n' || incomingCommandPointer >= INCOMING_CMD_BUF_SIZE)
-    {
-
-      //char commandChar[incomingCommandPointer + 1];
-      for (int i = 0; i < incomingCommandPointer - 1; i++)
+      switch (val)
       {
-          commandChar[i] = incomingCommandArray[i];
-      }
-      commandChar[incomingCommandPointer-1] = '\0';
-
-      if (incomingCommandPointer > 1)
-      {
-
-        // Report back the received command
-        Serial.print(COMM_REPORT_CMD_ECHO);
-        Serial.print(" ");
-        Serial.print("*");
-        Serial.print(commandChar);
-        Serial.print("*");
-        Serial.print("\r\n");
-
-        // Create a command and let it execute
-        Command *command = new Command(commandChar);
-      
-        // Log the values if needed for debugging
-        if (LOGGING || debugMessages)
-        {
-          command->print();
-        }
-
-        if(command->getCodeEnum()> 300) //K command starts from 311
-        {
-          kCodeProcessor->execute(command);     
-        }
-        else{ //G command 
-          //gCodeProcessor->execute(command);
-        }
-
-        free(command);
-
+        case 'f':
+          farmbotStatus = SENSOR_INITIALIZATION;
+          break;
+        case 's':
+          farmbotStatus = ROBOT_INITIAL_ORIANTATION;
+          break;
+        case 't':
+          farmbotStatus = ADVANCE;
+          break;
       }
 
-      incomingCommandPointer = 0;
+
+
     }
   }
 
