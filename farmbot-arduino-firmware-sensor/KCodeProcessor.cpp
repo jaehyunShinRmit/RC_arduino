@@ -1,6 +1,9 @@
 /*
  * KCodeProcessor.cpp
- *
+ *  Created on: 15 maj 2014
+ *      Author: MattLech
+ *      Author: Tim Evers
+ *      Modified by: Jaehyun Shin 20/02/2018
  */
 
 #include "KCodeProcessor.h"

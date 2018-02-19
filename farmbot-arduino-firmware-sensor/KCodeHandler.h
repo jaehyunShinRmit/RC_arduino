@@ -3,6 +3,7 @@
  *
  *  Created on: 15 maj 2014
  *      Author: MattLech
+ *      Modified by Jaehyun Shin 20/02/2018
  */
 
 #ifndef KCodeHandler_H_

@@ -45,7 +45,8 @@
 #include "Debug.h"
 
 
-
+FarmbotSensor Bot; // Frambot Sensor state variables
+LSM9DS1 imu; //IMU
 static char commandEndChar = 0x0A;
 static KCodeProcessor *kCodeProcessor = new KCodeProcessor();
 //static GCodeProcessor *gCodeProcessor = new GCodeProcessor();
@@ -77,53 +78,6 @@ void blinkLed()
 //   - encoders
 //   - pin guard
 
-unsigned long interruptStartTime = 0;
-unsigned long interruptStopTime = 0;
-unsigned long interruptDuration = 0;
-unsigned long interruptDurationMax = 0;
-
-bool interruptBusy = false;
-int interruptSecondTimer = 0;
-void interrupt(void)
-{
-  if (!debugInterrupt)
-  {
-    //interruptSecondTimer++;
-
-    if (interruptBusy == false)
-    {
-      //interruptStartTime = micros();
-
-      interruptBusy = true;
-
-
-      // Check the actions triggered once per second
-      //if (interruptSecondTimer >= 1000000 / MOVEMENT_INTERRUPT_SPEED)
-      //{
-      //  interruptSecondTimer = 0;
-      //  PinGuard::getInstance()->checkPins();
-      //  //blinkLed();
-      //}
-
-      //interruptStopTime = micros();
-
-      //if (interruptStopTime > interruptStartTime)
-      //{
-      //  interruptDuration = interruptStopTime - interruptStartTime;
-      //}
-
-      //if (interruptDuration > interruptDurationMax)
-      //{
-      //  interruptDurationMax = interruptDuration;
-      //}
-
-      interruptBusy = false;
-    }
-  }
-}
-
-FarmbotSensor Bot;
-
 //Status of Arduino
 static int farmbotStatus = 1;
 #define SENSOR_INITIALIZATION       1
@@ -139,17 +93,12 @@ static unsigned long iAdvance = 0;
 static unsigned long iCollecting = 0;
 #define ARDUINO_USD_CS 10 // uSD card CS pin (pin 10 on SparkFun GPS Logger Shield)
 
-//////////////////////////
-// LSM9DS1 Library Init //
-//////////////////////////
-// Use the LSM9DS1 class to create an object. [imu] can be
-// named anything, we'll refer to that throught the sketch.
-LSM9DS1 imu;
+
 ///////////////////////
 // Example I2C Setup //
 ///////////////////////
 // SDO_XM and SDO_G are both pulled high, so our addresses are:
-#define LSM9DS1_M    0x1E // Would be 0x1C if SDO_M is LOW
+#define LSM9DS1_M   0x1E // Would be 0x1C if SDO_M is LOW
 #define LSM9DS1_AG  0x6B // Would be 0x6A if SDO_AG is LOW
 
 ////////////////////////////
@@ -239,8 +188,45 @@ int counter = 0;
 //////////////////////
 unsigned long lastLog = 0; // Global var to keep of last time we logged
 
+
+unsigned long interruptStartTime = 0;
+unsigned long interruptStopTime = 0;
+unsigned long interruptDuration = 0;
+unsigned long interruptDurationMax = 0;
+
+bool interruptBusy = false;
+int interruptSecondTimer = 0;
+void interrupt(void)
+{
+  if (!debugInterrupt)
+  {
+    interruptSecondTimer++;
+
+    if (interruptBusy == false)
+    {
+      interruptBusy = true;
+      // triggered once per 10 ms
+      if (interruptSecondTimer >= 100000 / MOVEMENT_INTERRUPT_SPEED)
+      {    
+        interruptSecondTimer = 0;
+        updateOriantation();
+        Serial.print("Initial - Orientation: ");
+        Serial.print(Bot.roll_deg);
+        Serial.print(" ");
+        Serial.print(Bot.pitch_deg);
+        Serial.print(" ");
+        Serial.println(Bot.heading_deg);
+      }
+      interruptBusy = false;
+    }
+  }
+}
+
+
 void setup()
 {
+  
+  Serial.begin(115200);
   /*
   Serial.begin(115200);
   gpsPort.begin(GPS_BAUD);
@@ -253,21 +239,7 @@ void setup()
   }
   updateFileName(); // Each time we start, create a new file, increment the number
   printHeader(); // Print a header at the top of the new file
-  // Before initializing the IMU, there are a few settings
-  // we may need to adjust. Use the settings struct to set
-  // the device's communication mode and addresses:
-  imu.settings.device.commInterface = IMU_MODE_I2C;
-  imu.settings.device.mAddress = LSM9DS1_M;
-  imu.settings.device.agAddress = LSM9DS1_AG;
-
-  // The above lines will only take effect AFTER calling
-  // imu.begin(), which verifies communication with the IMU
-  // and turns it on.
-  if (!imu.begin())
-  {
-    Serial.println("Failed to communicate with LSM9DS1.");
-    while (1);
-  }
+ 
   // Motor Driver setup
   int i;
   for (i = 4; i <= 7; i++)
@@ -277,19 +249,29 @@ void setup()
   pinMode(2, INPUT);
   pinMode(3, INPUT);
 */
+  // IMU initialization
+  imu.settings.device.commInterface = IMU_MODE_I2C;
+  imu.settings.device.mAddress = LSM9DS1_M;
+  imu.settings.device.agAddress = LSM9DS1_AG;
+  if (!imu.begin())
+  {
+    Serial.println("Failed to communicate with LSM9DS1.");
+    while (1);
+  } 
+  
   // Start the interrupt used for moving
   // Interrupt management code library written by Paul Stoffregen
   // The default time 100 micro seconds
 
-  Serial.begin(115200);
-  
+ 
+  // The default time 100 micro seconds
   Timer1.attachInterrupt(interrupt);
   Timer1.initialize(MOVEMENT_INTERRUPT_SPEED);
   Timer1.start();
 
- // Initialize the inactivity check
+  // Initialize the inactivity check
   lastAction = millis();
-    Serial.print("R99 ARDUINO STARTUP COMPLETE\r\n");
+  Serial.print("R99 ARDUINO STARTUP COMPLETE\r\n");
 }
 
 
@@ -382,6 +364,14 @@ void loop()
   while (gpsPort.available())
     tinyGPS.encode(gpsPort.read());
 */
+  if ((lastPrint + PRINT_SPEED) < millis())
+  {
+   // updateOriantation();
+   ///updateIMU();
+    updateFarmbot();
+    lastPrint = millis(); // Update lastPrint time
+  }
+
   if (Serial.available()) {
 
     // Save current time stamp for timeout actions
@@ -461,23 +451,23 @@ void loop()
 void updateFarmbot()
 {
   updateIMU();
-  Bot.ax = imu.calcAccel(imu.ax);
-  Bot.ay = imu.calcAccel(imu.ay);
-  Bot.az = imu.calcAccel(imu.az);
-  Bot.gx = imu.calcGyro(imu.gx);
-  Bot.gy = imu.calcGyro(imu.gy);
-  Bot.gz = imu.calcGyro(imu.gz);
-  Bot.mx = imu.calcMag(imu.mx) * 100000;
-  Bot.my = imu.calcMag(imu.my) * 100000;
-  Bot.mz = imu.calcMag(imu.mz) * 100000;
+  Bot.ax = (long)(imu.calcAccel(imu.ax)*1000);
+  Bot.ay = (long)(imu.calcAccel(imu.ay)*1000);
+  Bot.az = (long)(imu.calcAccel(imu.az)*1000);
+  Bot.gx = (long)(imu.calcGyro(imu.gx)*1000);
+  Bot.gy = (long)(imu.calcGyro(imu.gy)*1000);
+  Bot.gz = (long)(imu.calcGyro(imu.gz)*1000);
+  Bot.mx = (long)(imu.calcMag(imu.mx)*100000);
+  Bot.my = (long)(imu.calcMag(imu.my)*100000);
+  Bot.mz = (long)(imu.calcMag(imu.mz)*100000);
 }
 void updateOriantation()
 {
-  updateFarmbot(); // update the current measurement of sensors on the Farmbot
+  //updateFarmbot(); // update the current measurement of sensors on the Farmbot
 
-  float x =  Bot.mx - mag_offsets[0];
-  float y =  Bot.my - mag_offsets[1];
-  float z =  Bot.mz - mag_offsets[2];
+  float x =  (float)Bot.mx - mag_offsets[0];
+  float y =  (float)Bot.my - mag_offsets[1];
+  float z =  (float)Bot.mz - mag_offsets[2];
 
   // Apply mag soft iron error compensation
   float mx = x * mag_softiron_matrix[0][0] + y * mag_softiron_matrix[0][1] + z * mag_softiron_matrix[0][2];
@@ -485,20 +475,28 @@ void updateOriantation()
   float mz = x * mag_softiron_matrix[2][0] + y * mag_softiron_matrix[2][1] + z * mag_softiron_matrix[2][2];
 
   // Pitch and roll
-  Bot.roll  = atan2(Bot.ay, Bot.az);
-  Bot.pitch = atan2(-Bot.ax, Bot.ay * sin(Bot.roll) + Bot.az * cos(Bot.roll));
-  Bot.roll_deg = Bot.roll * 180.0 / M_PI;
-  Bot.pitch_deg = Bot.pitch * 180.0 / M_PI;
+  float roll  = atan2((float)Bot.ay, (float)Bot.az);
+  float pitch = atan2(-(float)Bot.ax, (float)Bot.ay * sin(roll) + (float)Bot.az * cos(roll));
+  float roll_deg = roll * 180.0 / M_PI;
+  float pitch_deg = pitch * 180.0 / M_PI;
 
   // Tilt compensated magnetic sensor measurements
-  float mx_comp = mx * cos(Bot.pitch) + my * sin(Bot.pitch) * sin(Bot.roll) + mz * sin(Bot.pitch) * cos(Bot.roll);
-  float my_comp = mz * sin(Bot.roll) - my * cos(Bot.roll);
+  float mx_comp = mx * cos(pitch) + my * sin(pitch) * sin(roll) + mz * sin(pitch) * cos(roll);
+  float my_comp = mz * sin(roll) - my * cos(roll);
 
   // Arctangent of y/x
-  Bot.heading = atan2(my_comp, mx_comp);
-  Bot.heading_deg = Bot.heading * 180.0 / M_PI;
-  if (Bot.heading_deg  < 0)
-    Bot.heading_deg += 360;
+  float heading = atan2(my_comp, mx_comp);
+  float heading_deg = heading * 180.0 / M_PI;
+  if (heading_deg  < 0.0)
+    heading_deg += 360.0;
+
+  // Change to long type
+  Bot.roll  = (long) roll; 
+  Bot.pitch = (long) pitch;
+  Bot.roll_deg = (long) roll_deg;
+  Bot.pitch_deg = (long) pitch_deg;
+  Bot.heading = (long) heading;
+  Bot.heading_deg = (long) heading_deg;
 }
 
 void InitialOriantationUpdate(int n)
